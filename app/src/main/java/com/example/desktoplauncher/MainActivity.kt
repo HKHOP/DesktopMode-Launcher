@@ -1,4 +1,4 @@
-package com.example.desktoplauncher
+package io.github.desktopmodelauncher
 
 import android.app.ActivityOptions
 import android.content.Intent
