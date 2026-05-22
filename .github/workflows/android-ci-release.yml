@@ -36,6 +36,19 @@ jobs:
           TAG="auto-v${GITHUB_RUN_NUMBER}"
           echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
 
+      - name: Locate release APK
+        id: apk
+        run: |
+          APK_PATH="$(find app/build/outputs/apk/release -maxdepth 1 -type f -name '*.apk' | head -n 1)"
+
+          if [ -z "$APK_PATH" ]; then
+            echo "No APK file found in app/build/outputs/apk/release"
+            exit 1
+          fi
+
+          echo "apk_path=${APK_PATH}" >> "$GITHUB_OUTPUT"
+          echo "Detected APK: ${APK_PATH}"
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
@@ -43,4 +56,4 @@ jobs:
           name: Desktop Launcher ${{ steps.meta.outputs.tag }}
           generate_release_notes: true
           files: |
-            app/build/outputs/apk/release/app-release-unsigned.apk
+            ${{ steps.apk.outputs.apk_path }}
