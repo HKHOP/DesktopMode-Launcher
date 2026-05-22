@@ -11,13 +11,15 @@ import android.graphics.Rect
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.provider.MediaStore
 import android.provider.Settings
-import android.view.HapticFeedbackConstants
 import android.view.WindowInsets
 import android.view.WindowInsetsController
 import android.view.accessibility.AccessibilityManager
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
@@ -57,14 +59,19 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
+import coil.compose.AsyncImage
 
 class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        if (Settings.canDrawOverlays(this)) {
+            startService(Intent(this, TaskbarOverlayService::class.java))
+        }
         setContent {
             DesktopLauncherTheme {
                 DesktopLauncherScreen(packageManager)
@@ -75,6 +82,9 @@ class MainActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         hideSystemUi()
+        if (Settings.canDrawOverlays(this)) {
+            startService(Intent(this, TaskbarOverlayService::class.java))
+        }
     }
 
     private fun hideSystemUi() {
@@ -105,53 +115,59 @@ fun DesktopLauncherScreen(packageManager: PackageManager) {
     val activeApps = remember { mutableStateListOf<LaunchableApp>() }
     var appMenuOpen by remember { mutableStateOf(false) }
     var desktopMenuOpen by remember { mutableStateOf(false) }
-    var wallpaperMode by remember { mutableStateOf("Aurora") }
-    var desktopColor by remember { mutableStateOf(Color(0xFF0F172A)) }
+    var wallpaperUri by remember { mutableStateOf<Uri?>(null) }
+    var gradientPickerOpen by remember { mutableStateOf(false) }
+    var gradientTop by remember { mutableStateOf(Color(0xFF0F172A)) }
+    var gradientBottom by remember { mutableStateOf(Color(0xFF1D4ED8)) }
+
+    val pickWallpaperLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        wallpaperUri = uri
+    }
 
     LaunchedEffect(Unit) {
         refreshRecentApps(context, apps, activeApps)
     }
 
-    Scaffold(
-        bottomBar = {
-            Taskbar(
-                apps = activeApps,
-                onOpenMenu = { appMenuOpen = true },
-                onLaunchApp = { launchApp(it.packageName) },
-                onBack = { AccessibilityActionService.triggerBack() },
-                onHome = { minimizeAllApps(context) }
-            )
-        }
-    ) { padding ->
+    Scaffold { _ ->
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(padding)
                 .combinedClickable(
                     onClick = { },
                     onLongClick = { desktopMenuOpen = true }
                 )
-                .background(Brush.verticalGradient(listOf(desktopColor, desktopColor.copy(alpha = 0.92f))))
         ) {
-            Column(modifier = Modifier.padding(24.dp)) {
-                Text("Desktop Mode Launcher", style = MaterialTheme.typography.headlineMedium, color = Color.White)
-                Spacer(modifier = Modifier.height(8.dp))
-                Text("Long-press desktop for customization.", color = Color(0xFFBFDBFE))
-                PermissionPanel(context)
+            if (wallpaperUri != null) {
+                AsyncImage(
+                    model = wallpaperUri,
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize()
+                )
+            } else {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(Brush.verticalGradient(listOf(gradientTop, gradientBottom)))
+                )
             }
 
             DropdownMenu(expanded = desktopMenuOpen, onDismissRequest = { desktopMenuOpen = false }) {
-                DropdownMenuItem(text = { Text("Wallpaper: Aurora") }, onClick = { wallpaperMode = "Aurora"; desktopColor = Color(0xFF0F172A) })
-                DropdownMenuItem(text = { Text("Wallpaper: Dusk") }, onClick = { wallpaperMode = "Dusk"; desktopColor = Color(0xFF312E81) })
-                DropdownMenuItem(text = { Text("Pick color: Graphite") }, onClick = { desktopColor = Color(0xFF1F2937) })
-                DropdownMenuItem(text = { Text("Pick color: Forest") }, onClick = { desktopColor = Color(0xFF14532D) })
+                DropdownMenuItem(
+                    text = { Text("Pick wallpaper from gallery") },
+                    onClick = {
+                        desktopMenuOpen = false
+                        pickWallpaperLauncher.launch("image/*")
+                    }
+                )
+                DropdownMenuItem(
+                    text = { Text("Open gradient color picker") },
+                    onClick = {
+                        desktopMenuOpen = false
+                        gradientPickerOpen = true
+                    }
+                )
             }
-
-            Text(
-                text = "Theme: $wallpaperMode",
-                modifier = Modifier.align(Alignment.TopEnd).padding(16.dp),
-                color = Color.White
-            )
 
             AnimatedVisibility(visible = appMenuOpen) {
                 AppMenuDialog(apps = apps, onDismiss = { appMenuOpen = false }, onLaunch = {
@@ -160,40 +176,39 @@ fun DesktopLauncherScreen(packageManager: PackageManager) {
                     refreshRecentApps(context, apps, activeApps)
                 })
             }
+
+            if (gradientPickerOpen) {
+                GradientPickerDialog(
+                    onDismiss = { gradientPickerOpen = false },
+                    onSelect = { top, bottom ->
+                        gradientTop = top
+                        gradientBottom = bottom
+                        wallpaperUri = null
+                        gradientPickerOpen = false
+                    }
+                )
+            }
         }
     }
 }
 
 @Composable
-private fun PermissionPanel(context: Context) {
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 16.dp)) {
-        PermissionButton("Enable overlay permission") {
-            context.startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:${context.packageName}")))
-        }
-        PermissionButton("Enable accessibility service") {
-            context.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
-        }
-        PermissionButton("Enable usage access") {
-            context.startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))
-        }
-    }
-}
-
-@Composable
-private fun PermissionButton(label: String, onClick: () -> Unit) {
-    Button(onClick = onClick) { Text(label) }
-}
-
-@OptIn(ExperimentalFoundationApi::class)
-@Composable
-private fun Taskbar(apps: List<LaunchableApp>, onOpenMenu: () -> Unit, onLaunchApp: (LaunchableApp) -> Unit, onBack: () -> Unit, onHome: () -> Unit) {
-    Row(modifier = Modifier.fillMaxWidth().background(Color(0xDD020617)).padding(8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-        IconButton(onClick = onOpenMenu) { Box(modifier = Modifier.size(34.dp).background(Color(0xFF2563EB), CircleShape), contentAlignment = Alignment.Center) { Text("≡", color = Color.White) } }
-        IconButton(onClick = onBack) { Box(modifier = Modifier.size(34.dp).background(Color(0xFF334155), CircleShape), contentAlignment = Alignment.Center) { Text("←", color = Color.White) } }
-        IconButton(onClick = onHome) { Box(modifier = Modifier.size(34.dp).background(Color(0xFF334155), CircleShape), contentAlignment = Alignment.Center) { Text("⌂", color = Color.White) } }
-        apps.forEach { app ->
-            Card(modifier = Modifier.combinedClickable(onClick = { onLaunchApp(app) }, onLongClick = { }), colors = CardDefaults.cardColors(containerColor = Color(0xFF1E293B)), shape = RoundedCornerShape(12.dp)) {
-                Text(app.label.take(12), color = Color.White, modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp))
+private fun GradientPickerDialog(onDismiss: () -> Unit, onSelect: (Color, Color) -> Unit) {
+    val presets = listOf(
+        Color(0xFF0F172A) to Color(0xFF1D4ED8),
+        Color(0xFF312E81) to Color(0xFF7C3AED),
+        Color(0xFF14532D) to Color(0xFF22C55E),
+        Color(0xFF7F1D1D) to Color(0xFFEF4444)
+    )
+    Dialog(onDismissRequest = onDismiss) {
+        Card(shape = RoundedCornerShape(20.dp), colors = CardDefaults.cardColors(containerColor = Color(0xFF0F172A))) {
+            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text("Gradient color picker", color = Color.White)
+                presets.forEach { pair ->
+                    Button(onClick = { onSelect(pair.first, pair.second) }, modifier = Modifier.fillMaxWidth()) {
+                        Text("Apply gradient")
+                    }
+                }
             }
         }
     }
