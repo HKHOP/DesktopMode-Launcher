@@ -1,0 +1,4 @@
+<resources>
+    <string name="app_name">Desktop Launcher</string>
+    <string name="accessibility_service_desc">Desktop launcher global back button support.</string>
+</resources>
