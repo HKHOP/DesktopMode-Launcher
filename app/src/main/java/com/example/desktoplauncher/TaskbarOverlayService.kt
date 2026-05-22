@@ -4,6 +4,7 @@ import android.app.Service
 import android.content.Intent
 import android.graphics.PixelFormat
 import android.os.IBinder
+import android.util.Log
 import android.provider.Settings
 import android.view.Gravity
 import android.view.WindowManager
@@ -29,6 +30,7 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.getSystemService
 
 class TaskbarOverlayService : Service() {
+    private var windowManager: WindowManager? = null
     private var overlayView: ComposeView? = null
 
     override fun onBind(intent: Intent?): IBinder? = null
@@ -39,10 +41,16 @@ class TaskbarOverlayService : Service() {
             stopSelf()
             return
         }
-        val windowManager = getSystemService<WindowManager>() ?: run {
+        val wm = getSystemService<WindowManager>() ?: run {
             stopSelf()
             return
         }
+        windowManager = wm
+
+        if (overlayView?.isAttachedToWindow == true) {
+            return
+        }
+
         val view = ComposeView(this).apply {
             setContent { OverlayTheme { OverlayTaskbar() } }
         }
@@ -55,15 +63,32 @@ class TaskbarOverlayService : Service() {
         ).apply {
             gravity = Gravity.BOTTOM
         }
-        windowManager.addView(view, layoutParams)
-        overlayView = view
+        try {
+            wm.addView(view, layoutParams)
+            overlayView = view
+        } catch (e: RuntimeException) {
+            Log.e(TAG, "Failed to add taskbar overlay", e)
+            stopSelf()
+        }
     }
 
     override fun onDestroy() {
-        val windowManager = getSystemService<WindowManager>()
-        overlayView?.let { view -> windowManager?.removeView(view) }
+        overlayView?.let { view ->
+            runCatching {
+                if (view.isAttachedToWindow) {
+                    windowManager?.removeViewImmediate(view)
+                }
+            }.onFailure { e ->
+                Log.w(TAG, "Failed removing taskbar overlay", e)
+            }
+        }
         overlayView = null
+        windowManager = null
         super.onDestroy()
+    }
+
+    companion object {
+        private const val TAG = "TaskbarOverlayService"
     }
 }
 
