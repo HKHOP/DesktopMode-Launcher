@@ -19,6 +19,7 @@ import android.view.accessibility.AccessibilityManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
@@ -88,6 +89,7 @@ class MainActivity : ComponentActivity() {
 
 data class LaunchableApp(val label: String, val packageName: String)
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun DesktopLauncherScreen(packageManager: PackageManager) {
     val context = LocalContext.current
@@ -182,6 +184,7 @@ private fun PermissionButton(label: String, onClick: () -> Unit) {
     Button(onClick = onClick) { Text(label) }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun Taskbar(apps: List<LaunchableApp>, onOpenMenu: () -> Unit, onLaunchApp: (LaunchableApp) -> Unit, onBack: () -> Unit, onHome: () -> Unit) {
     Row(modifier = Modifier.fillMaxWidth().background(Color(0xDD020617)).padding(8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -196,6 +199,7 @@ private fun Taskbar(apps: List<LaunchableApp>, onOpenMenu: () -> Unit, onLaunchA
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun AppMenuDialog(apps: List<LaunchableApp>, onDismiss: () -> Unit, onLaunch: (LaunchableApp) -> Unit) {
     Dialog(onDismissRequest = onDismiss) {
